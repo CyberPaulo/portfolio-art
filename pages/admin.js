@@ -15,41 +15,48 @@ export default function Admin() {
   };
 
   const uploadDrawing = async () => {
+    if (!file) return alert('Selecione um arquivo!');
+    
     const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
-
-    // Upload para o Supabase Storage
+    const fileName = `${Date.now()}.${fileExt}`;
+  
+    // 1. Upload para o Storage
     const { error: uploadError } = await supabase.storage
-      .from('drawings')
+      .from('drawings') // ← Nome do bucket deve bater aqui
       .upload(fileName, file);
-
-    if (uploadError) return alert(uploadError.message);
-
-    // Salva no banco
-    const { error } = await supabase.from('drawings').insert({
-      title: file.name,
-      image_url: fileName,
-      category_id: 1 // Altere conforme a categoria
-    });
-
-    if (error) alert(error.message);
-    else fetchDrawings();
+  
+    if (uploadError) {
+      console.error(uploadError);
+      return alert('Falha no upload: ' + uploadError.message);
+    }
+  
+    // 2. Gerar URL pública
+    const { data: { publicUrl } } = supabase.storage
+      .from('drawings')
+      .getPublicUrl(fileName);
+  
+    // 3. Salvar metadados no banco
+    const { error: dbError } = await supabase
+      .from('drawings')
+      .insert({
+        title: file.name,
+        image_url: publicUrl, // Agora usando a URL pública
+        category_id: 1
+      });
+  
+    if (dbError) alert('Erro no banco: ' + dbError.message);
+    else {
+      alert('Upload feito!');
+      fetchDrawings();
+    }
   };
 
-  return (
-    <div>
-      <input type="file" onChange={(e) => setFile(e.target.files[0])} />
-      <button onClick={uploadDrawing}>Upload</button>
-      
-      <div>
-        {drawings.map((drawing) => (
-          <img 
-            key={drawing.id} 
-            src={supabase.storage.from('drawings').getPublicUrl(drawing.image_url)} 
-            alt={drawing.title}
-          />
-        ))}
-      </div>
-    </div>
-  );
+  useEffect(() => {
+    const checkBucket = async () => {
+      const { data, error } = await supabase.storage.listBuckets();
+      console.log('Buckets disponíveis:', data);
+    };
+    checkBucket();
+  }, []);
+
 }
